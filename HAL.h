@@ -1,10 +1,30 @@
-/*
- * HAL.h
- *
- *  Created on: Dec 29, 2019
- *      Author: Matthew Zhong
- *  Supervisor: Leyla Nazhand-Ali
- */
+// =============================================================================
+// HAL.h — Hardware Abstraction Layer (HAL) Header
+// =============================================================================
+// Defines the top-level HAL struct that aggregates all hardware peripherals
+// on the MSP432 LaunchPad and BoosterPack into a single object.
+//
+// The HAL cleanly separates hardware interaction from application logic —
+// all GPIO reads, LED writes, button debouncing, and UART communication
+// go through this layer so the application code never touches hardware
+// registers directly.
+//
+// Peripherals included:
+//   - 4 LaunchPad LEDs (LED1 red, LED2 red/blue/green)
+//   - 3 BoosterPack LEDs (red, blue, green)
+//   - 5 Buttons (LaunchPad S1/S2, BoosterPack S1/S2, joystick button)
+//   - 1 UART instance for serial communication
+//
+// Usage:
+//   1. Create exactly ONE HAL instance per project using HAL_construct()
+//   2. Store it inside the main Application struct so all functions have access
+//   3. Call HAL_refresh() once per main loop cycle to update all button states
+//
+// WARNING: You should have exactly ONE HAL struct in your entire project.
+// Multiple HAL instances will cause conflicts in GPIO and peripheral state.
+//
+// Originally authored by Matthew Zhong, supervised by Leyla Nazhand-Ali.
+// =============================================================================
 
 #ifndef HAL_HAL_H_
 #define HAL_HAL_H_
@@ -15,51 +35,60 @@
 #include <HAL/UART.h>
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
 
-/**============================================================================
- * The main HAL struct. This struct encapsulates all of the other input structs
- * in this application as individual members. This includes all LEDs, all
- * Buttons, one HWTimer from which all software timers should reference, the
- * Joystick, and any other peripherals with which you wish to interface.
- * ============================================================================
- * USAGE WARNINGS
- * ============================================================================
- * YOU SHOULD HAVE EXACTLY ONE HAL STRUCT IN YOUR ENTIRE PROJECT. We recommend
- * you put this struct inside of a main [Application] object so that every
- * single function in your application has access to the main inputs and outputs
- * which interface with the hardware on the MSP432.
- */
+// =============================================================================
+// HAL Struct
+// Aggregates all hardware peripherals into a single object passed through
+// the application. One instance of this struct represents the entire board.
+// =============================================================================
 struct _HAL {
-  // LEDs - Left Launchpad LED (the LED is only a single color - red)
-  LED launchpadLED1;
 
-  // LEDs - Right Launchpad LEDs (one LED struct for red, one for blue, etc.)
-  LED launchpadLED2Red;
-  LED launchpadLED2Blue;
-  LED launchpadLED2Green;
+    // -------------------------------------------------------------------------
+    // LEDs — LaunchPad
+    // LED1 is single-color (red only)
+    // LED2 is RGB — one LED struct per color channel
+    // -------------------------------------------------------------------------
+    LED launchpadLED1;          // LaunchPad LED1 — red only
+    LED launchpadLED2Red;       // LaunchPad LED2 — red channel
+    LED launchpadLED2Blue;      // LaunchPad LED2 — blue channel
+    LED launchpadLED2Green;     // LaunchPad LED2 — green channel
 
-  // LEDs - Boosterpack LED (one LED struct for red, one for blue, etc.)
-  LED boosterpackRed;
-  LED boosterpackBlue;
-  LED boosterpackGreen;
+    // -------------------------------------------------------------------------
+    // LEDs — BoosterPack
+    // RGB LED — one struct per color channel
+    // -------------------------------------------------------------------------
+    LED boosterpackRed;         // BoosterPack LED — red channel
+    LED boosterpackBlue;        // BoosterPack LED — blue channel
+    LED boosterpackGreen;       // BoosterPack LED — green channel
 
-  // Buttons - Launchpad S1 and S2
-  Button launchpadS1;
-  Button launchpadS2;
+    // -------------------------------------------------------------------------
+    // Buttons — LaunchPad
+    // -------------------------------------------------------------------------
+    Button launchpadS1;         // LaunchPad S1 button
+    Button launchpadS2;         // LaunchPad S2 button
 
-  // Buttons - Boosterpack S1, S2, and JS (press down on the joystick)
-  Button boosterpackS1;
-  Button boosterpackS2;
-  Button boosterpackJS;
+    // -------------------------------------------------------------------------
+    // Buttons — BoosterPack
+    // JS = joystick button (press down on the joystick)
+    // -------------------------------------------------------------------------
+    Button boosterpackS1;       // BoosterPack S1 button (BB1)
+    Button boosterpackS2;       // BoosterPack S2 button (BB2)
+    Button boosterpackJS;       // BoosterPack joystick button (JSB)
 
-  // UART - Construct a new UART instance
-  UART uart;
+    // -------------------------------------------------------------------------
+    // UART — Serial Communication
+    // -------------------------------------------------------------------------
+    UART uart;                  // UART instance for serial communication
 };
 typedef struct _HAL HAL;
 
-// Constructs an HAL object by calling the constructor of each individual member
+// =============================================================================
+// Function Prototypes
+// =============================================================================
+
+/** Constructs the HAL by initializing all peripheral member structs */
 HAL HAL_construct();
 
-// Refreshes all necessary inputs in the HAL
+/** Refreshes all input peripherals — call exactly once per main loop cycle */
 void HAL_refresh(HAL* api);
 
 #endif /* HAL_HAL_H_ */
