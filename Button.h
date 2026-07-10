@@ -1,10 +1,27 @@
-/*
- * Button.h
- *
- *  Created on: Dec 30, 2019
- *      Author: Matthew Zhong
- *  Supervisor: Leyla Nazhand-Ali
- */
+// =============================================================================
+// Button.h — GPIO Pushbutton Driver Header
+// =============================================================================
+// Defines the Button object, debouncing FSM states, hardware pin mappings,
+// and function prototypes for the software-debounced pushbutton driver.
+//
+// The Button object uses a 4-state debouncing FSM to filter contact bounce
+// from physical button presses. See Button.c for full FSM implementation.
+//
+// Logic levels:
+//   PRESSED  = 0 (pin pulled LOW when button is pushed, due to pull-up resistor)
+//   RELEASED = 1 (pin reads HIGH by default when button is not pushed)
+//
+// Usage:
+//   1. Construct a button with Button_construct(port, pin)
+//   2. Call Button_refresh() exactly ONCE per main loop cycle to advance FSM
+//   3. Read outputs with Button_isPressed() or Button_isTapped()
+//
+// WARNING: Call Button_refresh() exactly once per cycle. Calling it multiple
+// times per cycle will advance the FSM more than once, causing missed edge
+// transitions and incorrect tap/press detection.
+//
+// Originally authored by Matthew Zhong, supervised by Leyla Nazhand-Ali.
+// =============================================================================
 
 #ifndef HAL_BUTTON_H_
 #define HAL_BUTTON_H_
@@ -12,89 +29,86 @@
 #include <HAL/Timer.h>
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
 
-#define DEBOUNCE_TIME_MS 5
-#define PRESSED 0
-#define RELEASED 1
+// =============================================================================
+// Timing and Logic Level Constants
+// =============================================================================
 
-/**
- * Predefined Button ports and pins for EACH BUTTON. Consult datasheets like
- * the Launchpad User Guide and the Boostepack User Guide to determine which
- * ports and pins map to which LEDs on the board.
- */
-#define LAUNCHPAD_S1_PORT GPIO_PORT_P1
-#define LAUNCHPAD_S1_PIN GPIO_PIN1
+#define DEBOUNCE_TIME_MS 5  // Duration signal must remain stable to confirm state change
+#define PRESSED  0          // Pin reads LOW when button is pressed (pull-up configuration)
+#define RELEASED 1          // Pin reads HIGH when button is released (pull-up configuration)
 
-#define LAUNCHPAD_S2_PORT GPIO_PORT_P1
-#define LAUNCHPAD_S2_PIN GPIO_PIN4
+// =============================================================================
+// Hardware Pin Mappings
+// =============================================================================
+// Port and pin definitions for all buttons on the LaunchPad and BoosterPack.
+// Consult the LaunchPad User Guide and BoosterPack User Guide for board layout.
 
-#define BOOSTERPACK_S1_PORT GPIO_PORT_P5
-#define BOOSTERPACK_S1_PIN GPIO_PIN1
+// LaunchPad onboard buttons
+#define LAUNCHPAD_S1_PORT       GPIO_PORT_P1
+#define LAUNCHPAD_S1_PIN        GPIO_PIN1
 
-#define BOOSTERPACK_S2_PORT GPIO_PORT_P3
-#define BOOSTERPACK_S2_PIN GPIO_PIN5
+#define LAUNCHPAD_S2_PORT       GPIO_PORT_P1
+#define LAUNCHPAD_S2_PIN        GPIO_PIN4
 
-#define BOOSTERPACK_JS_PORT GPIO_PORT_P4
-#define BOOSTERPACK_JS_PIN GPIO_PIN1
+// BoosterPack buttons
+#define BOOSTERPACK_S1_PORT     GPIO_PORT_P5
+#define BOOSTERPACK_S1_PIN      GPIO_PIN1
 
-/**
- * A simple enum to keep track of which states of debouncing a button is in.
- */
+#define BOOSTERPACK_S2_PORT     GPIO_PORT_P3
+#define BOOSTERPACK_S2_PIN      GPIO_PIN5
+
+// BoosterPack joystick button
+#define BOOSTERPACK_JS_PORT     GPIO_PORT_P4
+#define BOOSTERPACK_JS_PIN      GPIO_PIN1
+
+// =============================================================================
+// Debouncing FSM State Enum
+// =============================================================================
+// Four states representing stable and transitional conditions for the button
+// signal. Transition states use a timer to confirm stability before accepting
+// a state change — erroneous signals during transition reset the timer.
+//
+//   StableR      — Button confirmed released (default state at startup)
+//   TransitionRP — Signal appears pressed; waiting for debounce timer to confirm
+//   StableP      — Button confirmed pressed
+//   TransitionPR — Signal appears released; waiting for debounce timer to confirm
+
 enum _DebounceState { StableP, TransitionPR, TransitionRP, StableR };
 typedef enum _DebounceState DebounceState;
 
-/**=============================================================================
- * A simple Button object, implemented in the C object-oriented style. Use the
- * constructor [Button_construct()] to create a Button object. Afterwards, when
- * accessing each method of the Button object, pass in a pointer to the proper
- * Button as the first argument of the method.
- * =============================================================================
- * USAGE WARNINGS
- * =============================================================================
- * When using this Button object, DO NOT DIRECTLY ACCESS ANY MEMBERS VARIABLES
- * of a Button struct. Treat all members as PRIVATE - that is, you should ONLY
- * access a member of the Button struct if your function name starts with
- * "Button_"!
- *
- * In order to retrieve new data for the button, you MUST use the
- * [Button_refresh()] method ONE TIME at either the beginning or the end of each
- * cycle of the [while (true)] loop in [main()]. In this way, we poll for button
- * inputs exactly ONE TIME per cyclic execution. If your button doesn't seem to
- * work, this is probably why.
- *
- * Since the button works based off a DebounceState FSM, calling
- * [Button_refresh()] only once per cycle ensures that the FSM is only advanced
- * a single time per loop. Recall that the FSMs for debouncing and for
- * determining whether the button has been tapped or not both have outputs at
- * each edge of the FSM. If you accidentally call [Button_refresh()] more than
- * once per button per cycle, you WILL accidentally increment the FSMs more than
- * once, and so you will MISS edge transitions and outputs for the Button FSMs.
- */
+// =============================================================================
+// Button Struct
+// =============================================================================
+// Encapsulates all state for a single debounced pushbutton.
+// Treat all members as PRIVATE — only access them from functions prefixed
+// with "Button_". Do not read or write members directly from outside this HAL.
+
 struct _Button {
-  uint8_t port;  // The port on the Launchpad to which this Button is mapped
-  uint16_t pin;  // The pin  on the Launchpad to which this Button is mapped
+    uint8_t port;           // GPIO port this button is mapped to
+    uint16_t pin;           // GPIO pin this button is mapped to
 
-  // Keeps track of FSM progress in the Debouncing FSM
-  DebounceState debounceState;
+    DebounceState debounceState; // Current state of the 4-state debouncing FSM
+    SWTimer timer;               // Software timer used to wait out bouncy transitions
 
-  // The timer which is used to wait out a bouncy input
-  SWTimer timer;
-
-  // The outputs of the FSM.
-  int pushState;  // The output of the debouncing FSM (PRESSED or RELEASED)
-  bool isTapped;  // The output of the buttonpushed FSM (true or false).
+    int pushState;          // Debounced output: PRESSED or RELEASED
+    bool isTapped;          // Rising edge output: true for one cycle when first pressed
 };
 typedef struct _Button Button;
 
-/** Constructs a new button object, given a valid port and pin. */
+// =============================================================================
+// Function Prototypes
+// =============================================================================
+
+/** Constructs and initializes a Button object for the given port and pin */
 Button Button_construct(uint8_t port, uint16_t pin);
 
-/** Given a button, determines if the switch is currently pushed down */
+/** Returns true if the button is currently held down (debounced) */
 bool Button_isPressed(Button* button);
 
-/** Given a button, determines if it was "tapped" - pressed down and released */
+/** Returns true for one cycle when the button transitions from released to pressed */
 bool Button_isTapped(Button* button);
 
-/** Refreshes this button so the Button FSM now has new outputs to interpret */
+/** Advances the debouncing FSM — call exactly once per main loop cycle */
 void Button_refresh(Button* button);
 
 #endif /* HAL_BUTTON_H_ */
