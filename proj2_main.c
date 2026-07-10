@@ -1220,4 +1220,9 @@ void Application_handlePlayScreen(Application* app_p, HAL* hal_p) {
     handlePlayerShooting(app_p, hal_p, playerSize);
 
     updateAllPlayerBullets(app_p, &g_sContext, bulletSpeed, bulletUpdateFrequency,
-                           bulletLength, enemySize,
+                           bulletLength, enemySize, topBoundary, enemyHpCircleX,
+                           enemyHpCircleY, enemyHpCircleRadius);
+
+    // Redraw entities last so they appear above bullets
+    redrawEntities(app_p, &g_sContext, playerSize, enemySize);
+}
