@@ -1,100 +1,104 @@
-/*
- * LED.c
- *
- *  Created on: Dec 29, 2019
- *      Author: Matthew Zhong
- *  Supervisor: Leyla Nazhand-Ali
- */
+// =============================================================================
+// LED.c — GPIO LED Driver
+// =============================================================================
+// Implements control functions for individual LEDs mapped to GPIO output pins
+// on the MSP432 LaunchPad and BoosterPack.
+//
+// Each LED is represented as a struct tracking its port, pin, and current
+// lit state. All hardware writes go through DriverLib GPIO calls — the isLit
+// flag mirrors the hardware state in software so the current state can be
+// queried without re-reading the GPIO register.
+//
+// Available operations: turn on, turn off, toggle, query state.
+//
+// To determine which port and pin target which LED, consult the LaunchPad
+// Quick Reference Guide and BoosterPack User Manual.
+//
+// Originally authored by Matthew Zhong, supervised by Leyla Nazhand-Ali.
+// =============================================================================
 
 #include <HAL/LED.h>
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
 
-/**
- * Main constructor for an LED. This function should initialize a GPIO port-pin
- * pairing as a general-purpose output LED. The data for the initialized LED
- * should be returned as an LED struct.
- *
- * To determine which port and which pin targets which LED, consult datasheets
- * such as the Quick Reference Guide for both the Launchpad and Boosterpack, as
- * well as the User Manual for both the Launchpad and Boosterpack.
- *
- * @param port:     The GPIO port which targets the proper LED
- * @param pin:      The GPIO pin  which targets the proper LED
- */
+// =============================================================================
+// LED_construct — Initialize a GPIO Output Pin as an LED
+// =============================================================================
+// Configures the given port and pin as a GPIO output, sets it LOW (off),
+// and returns an initialized LED struct with isLit = false.
+//
+// @param port  The GPIO port targeting the desired LED
+// @param pin   The GPIO pin targeting the desired LED
+// @return      A fully constructed LED struct initialized to the off state
+// =============================================================================
 LED LED_construct(uint8_t port, uint16_t pin) {
-  // The main LED struct from which to instantiate all other data
-  LED led;
+    LED led;
 
-  // Initialize each member with the arguments from this function
-  led.isLit = false;  // The LED starts off unlit
-  led.port = port;    // The port comes from the constructor arguments
-  led.pin = pin;      // The pin  comes from the constructor arguments
+    led.isLit = false;  // LED starts off
+    led.port  = port;
+    led.pin   = pin;
 
-  GPIO_setAsOutputPin(led.port, led.pin);
-  GPIO_setOutputLowOnPin(led.port, led.pin);
+    // Configure pin as GPIO output and set LOW (off) at startup
+    GPIO_setAsOutputPin(led.port, led.pin);
+    GPIO_setOutputLowOnPin(led.port, led.pin);
 
-  // Returns a copy of the LED struct.
-  return led;
+    return led;
 }
 
-/**
- * Turns on (lights up) a user-specified LED.
- *
- * @param led:  The led to turn on
- */
+// =============================================================================
+// LED_turnOn — Set LED Output HIGH
+// =============================================================================
+// Drives the GPIO pin HIGH to illuminate the LED and updates isLit flag.
+//
+// @param led  Pointer to the LED to turn on
+// =============================================================================
 void LED_turnOn(LED* led) {
-  // Retrieve the port and pin target from the selected LED
-  uint8_t port = led->port;
-  uint16_t pin = led->pin;
+    uint8_t port  = led->port;
+    uint16_t pin  = led->pin;
 
-  // Internal logic: when we turn on the LED, update the isLit flag
-  led->isLit = true;
-
-  // TODO: For students, replace this call with RTL calls (without driverlib)
-  GPIO_setOutputHighOnPin(port, pin);
+    led->isLit = true;
+    GPIO_setOutputHighOnPin(port, pin);
 }
 
-/**
- * Turns off a user-specified LED.
- *
- * @param led:  The led to turn off
- */
+// =============================================================================
+// LED_turnOff — Set LED Output LOW
+// =============================================================================
+// Drives the GPIO pin LOW to extinguish the LED and updates isLit flag.
+//
+// @param led  Pointer to the LED to turn off
+// =============================================================================
 void LED_turnOff(LED* led) {
-  // Retrieve the port and pin target from the selected LED
-  uint8_t port = led->port;
-  uint16_t pin = led->pin;
+    uint8_t port  = led->port;
+    uint16_t pin  = led->pin;
 
-  // Internal logic: when we turn off the LED, update the isLit flag
-  led->isLit = false;
-
-  // TODO: For students, replace this call with RTL calls (without driverlib)
-  GPIO_setOutputLowOnPin(port, pin);
+    led->isLit = false;
+    GPIO_setOutputLowOnPin(port, pin);
 }
 
-/**
- * Toggles a user-specified LED.
- *
- * @param led:  The led to toggle
- */
+// =============================================================================
+// LED_toggle — Invert LED Output State
+// =============================================================================
+// Toggles the GPIO pin output and inverts the isLit flag.
+// If the LED was on it turns off; if it was off it turns on.
+//
+// @param led  Pointer to the LED to toggle
+// =============================================================================
 void LED_toggle(LED* led) {
-  // Retrieve the port and pin target from the selected LED
-  uint8_t port = led->port;
-  uint16_t pin = led->pin;
+    uint8_t port  = led->port;
+    uint16_t pin  = led->pin;
 
-  // Internal logic: when we toggle the LED, toggle the isLit flag.
-  led->isLit = !led->isLit;
-
-  // TODO: For students, replace this call with RTL calls (without driverlib)
-  GPIO_toggleOutputOnPin(port, pin);
+    led->isLit = !led->isLit;
+    GPIO_toggleOutputOnPin(port, pin);
 }
 
-/**
- * Determine whether the LED is lit or not.
- *
- * @param led:  The LED to check
- * @return whether the LED is lit or not
- */
+// =============================================================================
+// LED_isLit — Query Current LED State
+// =============================================================================
+// Returns the current lit state of the LED based on the software-tracked
+// isLit flag — does not re-read the GPIO register directly.
+//
+// @param led  Pointer to the LED to query
+// @return     true if the LED is currently on, false if off
+// =============================================================================
 bool LED_isLit(LED* led) {
-  bool isLit = led->isLit;
-  return isLit;
+    return led->isLit;
 }
