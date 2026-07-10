@@ -1,123 +1,114 @@
-/*
- * API.c
- *
- *  Created on: Dec 29, 2019
- *      Author: Matthew Zhong
- *  Supervisor: Leyla Nazhand-Ali
- */
+// =============================================================================
+// Button.h — GPIO Pushbutton Driver Header
+// =============================================================================
+// Defines the Button object, debouncing FSM states, hardware pin mappings,
+// and function prototypes for the software-debounced pushbutton driver.
+//
+// The Button object uses a 4-state debouncing FSM to filter contact bounce
+// from physical button presses. See Button.c for full FSM implementation.
+//
+// Logic levels:
+//   PRESSED  = 0 (pin pulled LOW when button is pushed, due to pull-up resistor)
+//   RELEASED = 1 (pin reads HIGH by default when button is not pushed)
+//
+// Usage:
+//   1. Construct a button with Button_construct(port, pin)
+//   2. Call Button_refresh() exactly ONCE per main loop cycle to advance FSM
+//   3. Read outputs with Button_isPressed() or Button_isTapped()
+//
+// WARNING: Call Button_refresh() exactly once per cycle. Calling it multiple
+// times per cycle will advance the FSM more than once, causing missed edge
+// transitions and incorrect tap/press detection.
+//
+// Originally authored by Matthew Zhong, supervised by Leyla Nazhand-Ali.
+// =============================================================================
 
-#include <HAL/HAL.h>
+#ifndef HAL_BUTTON_H_
+#define HAL_BUTTON_H_
 
-/**
- * Constructs a new API object. The API constructor should simply call the
- * constructors of each of its sub-members with the proper inputs.
- *
- * @return a properly constructed API object.
- */
+#include <HAL/Timer.h>
+#include <ti/devices/msp432p4xx/driverlib/driverlib.h>
 
-// Add to HAL.c or create a new Joystick.c file
+// =============================================================================
+// Timing and Logic Level Constants
+// =============================================================================
 
-void initADC() {
-    ADC14_enableModule();
-    ADC14_initModule(ADC_CLOCKSOURCE_SYSOSC, ADC_PREDIVIDER_1, ADC_DIVIDER_1, 0);
+#define DEBOUNCE_TIME_MS 5  // Duration signal must remain stable to confirm state change
+#define PRESSED  0          // Pin reads LOW when button is pressed (pull-up configuration)
+#define RELEASED 1          // Pin reads HIGH when button is released (pull-up configuration)
 
+// =============================================================================
+// Hardware Pin Mappings
+// =============================================================================
+// Port and pin definitions for all buttons on the LaunchPad and BoosterPack.
+// Consult the LaunchPad User Guide and BoosterPack User Guide for board layout.
 
-    ADC14_configureMultiSequenceMode(ADC_MEM0, ADC_MEM1, true);
-    ADC14_enableSampleTimer(ADC_AUTOMATIC_ITERATION);
-}
+// LaunchPad onboard buttons
+#define LAUNCHPAD_S1_PORT       GPIO_PORT_P1
+#define LAUNCHPAD_S1_PIN        GPIO_PIN1
 
-void initJoyStick() {
+#define LAUNCHPAD_S2_PORT       GPIO_PORT_P1
+#define LAUNCHPAD_S2_PIN        GPIO_PIN4
 
-    ADC14_configureConversionMemory(ADC_MEM0, ADC_VREFPOS_AVCC_VREFNEG_VSS,ADC_INPUT_A15, ADC_NONDIFFERENTIAL_INPUTS);
+// BoosterPack buttons
+#define BOOSTERPACK_S1_PORT     GPIO_PORT_P5
+#define BOOSTERPACK_S1_PIN      GPIO_PIN1
 
-    GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P6, GPIO_PIN0,GPIO_TERTIARY_MODULE_FUNCTION);
+#define BOOSTERPACK_S2_PORT     GPIO_PORT_P3
+#define BOOSTERPACK_S2_PIN      GPIO_PIN5
 
+// BoosterPack joystick button
+#define BOOSTERPACK_JS_PORT     GPIO_PORT_P4
+#define BOOSTERPACK_JS_PIN      GPIO_PIN1
 
-    ADC14_configureConversionMemory(ADC_MEM1,ADC_VREFPOS_AVCC_VREFNEG_VSS,ADC_INPUT_A9, ADC_NONDIFFERENTIAL_INPUTS);
+// =============================================================================
+// Debouncing FSM State Enum
+// =============================================================================
+// Four states representing stable and transitional conditions for the button
+// signal. Transition states use a timer to confirm stability before accepting
+// a state change — erroneous signals during transition reset the timer.
+//
+//   StableR      — Button confirmed released (default state at startup)
+//   TransitionRP — Signal appears pressed; waiting for debounce timer to confirm
+//   StableP      — Button confirmed pressed
+//   TransitionPR — Signal appears released; waiting for debounce timer to confirm
 
-    GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P4,GPIO_PIN4,GPIO_TERTIARY_MODULE_FUNCTION);
-}
+enum _DebounceState { StableP, TransitionPR, TransitionRP, StableR };
+typedef enum _DebounceState DebounceState;
 
-void startADC() {
-    ADC14_enableConversion();
-    ADC14_toggleConversionTrigger();
-}
+// =============================================================================
+// Button Struct
+// =============================================================================
+// Encapsulates all state for a single debounced pushbutton.
+// Treat all members as PRIVATE — only access them from functions prefixed
+// with "Button_". Do not read or write members directly from outside this HAL.
 
-HAL HAL_construct() {
-  // The API object which will be returned at the end of construction
-  HAL hal;
-    // ... your existing LED and button initialization ...
+struct _Button {
+    uint8_t port;           // GPIO port this button is mapped to
+    uint16_t pin;           // GPIO pin this button is mapped to
 
-    // Initialize ADC for joystick
-    initADC();
-    initJoyStick();
-    startADC();
+    DebounceState debounceState; // Current state of the 4-state debouncing FSM
+    SWTimer timer;               // Software timer used to wait out bouncy transitions
 
-  // Initialize all LEDs by calling their constructors with correctly-defined
-  // arguments.
-  hal.launchpadLED1 = LED_construct(LAUNCHPAD_LED1_PORT, LAUNCHPAD_LED1_PIN);
+    int pushState;          // Debounced output: PRESSED or RELEASED
+    bool isTapped;          // Rising edge output: true for one cycle when first pressed
+};
+typedef struct _Button Button;
 
-  hal.launchpadLED2Red =
-      LED_construct(LAUNCHPAD_LED2_RED_PORT, LAUNCHPAD_LED2_RED_PIN);
-  hal.launchpadLED2Green =
-      LED_construct(LAUNCHPAD_LED2_GREEN_PORT, LAUNCHPAD_LED2_GREEN_PIN);
-  hal.launchpadLED2Blue =
-      LED_construct(LAUNCHPAD_LED2_BLUE_PORT, LAUNCHPAD_LED2_BLUE_PIN);
+// =============================================================================
+// Function Prototypes
+// =============================================================================
 
-  hal.boosterpackRed =
-      LED_construct(BOOSTERPACK_LED_RED_PORT, BOOSTERPACK_LED_RED_PIN);
-  hal.boosterpackGreen =
-      LED_construct(BOOSTERPACK_LED_GREEN_PORT, BOOSTERPACK_LED_GREEN_PIN);
-  hal.boosterpackBlue =
-      LED_construct(BOOSTERPACK_LED_BLUE_PORT, BOOSTERPACK_LED_BLUE_PIN);
+/** Constructs and initializes a Button object for the given port and pin */
+Button Button_construct(uint8_t port, uint16_t pin);
 
-  // Initialize all Buttons by calling their constructors with correctly-defined
-  // arguments.
-  hal.launchpadS1 =
-      Button_construct(LAUNCHPAD_S1_PORT, LAUNCHPAD_S1_PIN);  // Launchpad S1
-  hal.launchpadS2 =
-      Button_construct(LAUNCHPAD_S2_PORT, LAUNCHPAD_S2_PIN);  // Launchpad S2
+/** Returns true if the button is currently held down (debounced) */
+bool Button_isPressed(Button* button);
 
-  hal.boosterpackS1 = Button_construct(BOOSTERPACK_S1_PORT,
-                                       BOOSTERPACK_S1_PIN);  // Boosterpack S1
-  hal.boosterpackS2 = Button_construct(BOOSTERPACK_S2_PORT,
-                                       BOOSTERPACK_S2_PIN);  // Boosterpack S2
-  hal.boosterpackJS = Button_construct(BOOSTERPACK_JS_PORT,
-                                       BOOSTERPACK_JS_PIN);  // Joystick Button
+/** Returns true for one cycle when the button transitions from released to pressed */
+bool Button_isTapped(Button* button);
 
-  // Construct the UART module inside of this HAL struct
-  hal.uart = UART_construct(USB_UART_INSTANCE, USB_UART_PORT, USB_UART_PINS);
+/** Advances the debouncing FSM — call exactly once per main loop cycle */
+void Button_refresh(Button* button);
 
-  // Enable the UART at 9600 BPS
-  // TODO: Call UART_SetBaud_Enable to achieve the above goal
-  UART_SetBaud_Enable(&hal.uart, BAUD_9600);
-
-  // Once we have finished building the API, return the completed struct.
-  return hal;
-}
-
-/**
- * Upon every new cycle of the main super-loop, we MUST UPDATE the status of
- * all inputs. In this program, this function is called only once in the
- * Application_loop() function. Since the Application_loop() function is called
- * once per loop of the while (true) loop in main, we are effectively polling
- * all inputs once per loop.
- *
- * @param hal:  The API whose input modules we wish to refresh
- */
-void HAL_refresh(HAL* hal) {
-  // Refresh Launchpad buttons
-  Button_refresh(&hal->launchpadS1);
-  Button_refresh(&hal->launchpadS2);
-
-  // Refresh Boosterpack buttons
-  Button_refresh(&hal->boosterpackS1);
-  Button_refresh(&hal->boosterpackS2);
-  Button_refresh(&hal->boosterpackJS);
-
-  // Not real TODO: No need to add anything for UART
-}
-
-
-// Add to HAL.c or create a new Joystick.c file
-
+#endif /* HAL_BUTTON_H_ */
